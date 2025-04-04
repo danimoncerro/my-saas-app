@@ -1,6 +1,5 @@
 <?php
 session_start();
-
 require_once '../config/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -13,7 +12,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         die("Numele magazinului este obligatoriu.");
     }
 
+    $template = $_POST['template'] ?? 'clasic'; // fallback dacă nu vine nimic
     $userId = $_SESSION['user_id'];
+
     $conn = connectDB();
 
     // Verifică dacă magazinul există deja
@@ -25,39 +26,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($checkStmt->num_rows > 0) {
         die("Magazinul există deja.");
     }
-
     $checkStmt->close();
 
-    // Inserare magazin cu user_id
+    // Inserare magazin
     $stmt = $conn->prepare("INSERT INTO stores (store_name, user_id) VALUES (?, ?)");
     $stmt->bind_param("si", $storeName, $userId);
     $stmt->execute();
     $stmt->close();
     $conn->close();
 
-    // Creează folderul magazinului
+    // Creează folder magazin
     $storeFolder = "../stores/online_stores/$storeName";
     if (!is_dir($storeFolder)) {
         mkdir($storeFolder, 0755, true);
     }
 
-    // Căi către template-uri
+    // Căi comune
     $templateAdmin = '../stores/settings/template_admin_dashboard.php';
     $templateDashboard = '../stores/settings/template_dashboard.php';
-    $templatePublic = '../stores/settings/template_public.php';
 
+    // Alege template public în funcție de selecție
+    switch ($template) {
+        case 'sneakers':
+            $templatePublic = '../stores/settings/template_sneakers.php';
+            break;
+        case 'fruits_veggies':
+            $templatePublic = '../stores/settings/template_fruits_veggies.php';
+            break;
+        case 'clasic':
+        default:
+            $templatePublic = '../stores/settings/template_public.php';
+            break;
+    }
+
+    // Verificăm existența fișierelor
     if (!file_exists($templateAdmin) || !file_exists($templateDashboard) || !file_exists($templatePublic)) {
         die("Fișierele template necesare nu au fost găsite.");
     }
 
-    // Destinațiile fișierelor copiate
-    $adminTarget = "$storeFolder/{$storeName}_admin_dashboard.php";
-    $dashboardTarget = "$storeFolder/{$storeName}_dashboard.php";
-    $publicTarget = "$storeFolder/{$storeName}.php";
-
-    copy($templateAdmin, $adminTarget);
-    copy($templateDashboard, $dashboardTarget);
-    copy($templatePublic, $publicTarget);
+    // Copiere fișiere
+    copy($templateAdmin, "$storeFolder/{$storeName}_admin_dashboard.php");
+    copy($templateDashboard, "$storeFolder/{$storeName}_dashboard.php");
+    copy($templatePublic, "$storeFolder/{$storeName}.php");
 
     // Redirecționare la dashboard
     header("Location: ../stores/online_stores/$storeName/{$storeName}_admin_dashboard.php?success=1");

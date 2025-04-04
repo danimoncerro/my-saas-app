@@ -20,14 +20,23 @@ $store = $result->fetch_assoc();
 $storeId = $store['id'] ?? 0;
 $stmt->close();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
-    $deleteId = intval($_POST['delete_id']);
-    $deleteStmt = $conn->prepare("DELETE FROM produse WHERE id_produs = ? AND store_id = ?");
-    $deleteStmt->bind_param("ii", $deleteId, $storeId);
-    $deleteStmt->execute();
-    $deleteStmt->close();
+// Preluăm stilurile existente
+$settings = [
+    'title' => '',
+    'slogan' => '',
+    'header_color' => '',
+    'background_color' => ''
+];
+$setStmt = $conn->prepare("SELECT * FROM store_settings WHERE store_id = ?");
+$setStmt->bind_param("i", $storeId);
+$setStmt->execute();
+$result = $setStmt->get_result();
+if ($row = $result->fetch_assoc()) {
+    $settings = $row;
 }
+$setStmt->close();
 
+// Listăm produsele
 $produse = [];
 if ($storeId) {
     $result = $conn->query("SELECT * FROM produse WHERE store_id = $storeId ORDER BY id_produs DESC");
@@ -47,67 +56,27 @@ $conn->close();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, sans-serif;
-            margin: 0;
-            background-color: #f0fdfb;
-        }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background-color: #f0fdfb; }
         .sidebar {
-            width: 240px;
-            background: #17a2b8;
-            min-height: 100vh;
-            float: left;
-            color: white;
+            width: 240px; background: #17a2b8; min-height: 100vh; float: left; color: white;
         }
-        .sidebar ul {
-            list-style-type: none;
-            padding: 0;
-        }
-        .sidebar li {
-            padding: 15px 20px;
-        }
+        .sidebar ul { list-style-type: none; padding: 0; }
+        .sidebar li { padding: 15px 20px; }
         .sidebar li a, .sidebar li button {
-            color: white;
-            text-decoration: none;
-            display: block;
-            background: none;
-            border: none;
-            width: 100%;
-            text-align: left;
-            padding: 0;
-            font-weight: bold;
+            color: white; text-decoration: none; display: block; background: none; border: none;
+            width: 100%; text-align: left; padding: 0; font-weight: bold;
         }
-        .sidebar li:hover {
-            background: #138496;
-        }
-        .content {
-            margin-left: 240px;
-            padding: 30px;
-        }
-        .section {
-            display: none;
-        }
-        .btn-success {
-            background-color: #28a745;
-            border-color: #28a745;
-        }
-        .btn-warning {
-            background-color: #ffc107;
-            border-color: #ffc107;
-        }
-        .btn-danger {
-            background-color: #dc3545;
-            border-color: #dc3545;
-        }
+        .sidebar li:hover { background: #138496; }
+        .content { margin-left: 240px; padding: 30px; }
+        .section { display: none; }
+        .btn-success { background-color: #28a745; border-color: #28a745; }
+        .btn-warning { background-color: #ffc107; border-color: #ffc107; }
+        .btn-danger { background-color: #dc3545; border-color: #dc3545; }
     </style>
     <script>
         function showSection(id) {
             document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
             document.getElementById(id).style.display = 'block';
-        }
-        function toggleForm() {
-            const form = document.getElementById('addProductForm');
-            form.style.display = (form.style.display === 'none' || form.style.display === '') ? 'block' : 'none';
         }
         window.onload = function () {
             const url = new URL(window.location.href);
@@ -126,6 +95,7 @@ $conn->close();
         <li><a href="#" onclick="showSection('utilizatori')"><i class="fas fa-user-shield"></i> Utilizatori & Roluri</a></li>
         <li><a href="#" onclick="showSection('module')"><i class="fas fa-cogs"></i> Module</a></li>
         <li><a href="#" onclick="showSection('rapoarte')"><i class="fas fa-chart-line"></i> Rapoarte</a></li>
+        <li><a href="#" onclick="showSection('personalizare')"><i class="fas fa-paint-brush"></i> Personalizare</a></li>
         <li>
             <form action="../../settings/update_dashboard.php" method="post" onsubmit="return confirm('Ești sigur că vrei să actualizezi dashboard-ul magazinului?')">
                 <input type="hidden" name="store_name" value="<?= htmlspecialchars($storeName) ?>">
@@ -145,11 +115,7 @@ $conn->close();
 
     <div id="produse" class="section">
         <h2>📦 Produse</h2>
-        <?php if (isset($_GET['added'])): ?>
-            <div class="alert alert-success">✅ Produsul a fost adăugat cu succes.</div>
-        <?php endif; ?>
         <button class="btn btn-success mb-3" onclick="toggleForm()">Adaugă produs nou</button>
-
         <form id="addProductForm" action="../../settings/process_add_product.php" method="POST" enctype="multipart/form-data" class="mb-4" style="display: none;">
             <input type="hidden" name="store_id" value="<?= $storeId ?>">
             <div class="form-row">
@@ -168,46 +134,37 @@ $conn->close();
             </div>
             <button type="submit" class="btn btn-success">Adaugă produs</button>
         </form>
+        <!-- Produse listă -->
+    </div>
 
-        <h4>📋 Lista produselor</h4>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover bg-white">
-                <thead class="thead-light">
-                    <tr>
-                        <th>Imagine</th>
-                        <th>Nume</th>
-                        <th>Preț</th>
-                        <th>Unitate</th>
-                        <th>Stoc</th>
-                        <th>Limită</th>
-                        <th>Descriere</th>
-                        <th>Acțiuni</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($produse as $produs): ?>          
-                    <tr>
-                        <td><?php if (!empty($produs['pic'])): ?><img src="/my-saas-app/public/images/<?= $produs['pic'] ?>" width="50"><?php endif; ?></td>
-                        <td><?= htmlspecialchars($produs['denumire']) ?></td>
-                        <td><?= htmlspecialchars($produs['pret']) ?> lei</td>
-                        <td><?= htmlspecialchars($produs['UM']) ?></td>
-                        <td><?= htmlspecialchars($produs['stoc']) ?></td>
-                        <td><?= htmlspecialchars($produs['stoc_limitat']) ?></td>
-                        <td><?= htmlspecialchars($produs['descriere']) ?></td>
-                        <td>
-                            <div class="d-flex gap-2">
-                                <a href="../../settings/edit_product.php?id=<?= $produs['id_produs'] ?>&store=<?= $storeName ?>" class="btn btn-warning btn-sm mr-1">Editează</a>
-                                <form method="POST" onsubmit="return confirm('Sigur dorești să ștergi acest produs?');">
-                                    <input type="hidden" name="delete_id" value="<?= $produs['id_produs'] ?>">
-                                    <button type="submit" class="btn btn-danger btn-sm">Șterge</button>
-                                </form>
-                            </div>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
+    <div id="personalizare" class="section">
+        <h2>🎨 Personalizare Magazin</h2>
+        <form action="../../settings/update_store_style.php" method="POST">
+            <input type="hidden" name="store_id" value="<?= $storeId ?>">
+            <input type="hidden" name="store_name" value="<?= $storeName ?>">
+
+            <div class="form-group">
+                <label>Titlu magazin:</label>
+                <input type="text" name="title" class="form-control" value="<?= htmlspecialchars($settings['title']) ?>" placeholder="Ex: Taraba Verde">
+            </div>
+
+            <div class="form-group">
+                <label>Slogan:</label>
+                <input type="text" name="slogan" class="form-control" value="<?= htmlspecialchars($settings['slogan']) ?>" placeholder="Ex: Fructe și legume direct de la fermieri">
+            </div>
+
+            <div class="form-group">
+                <label>Culoare header:</label>
+                <input type="color" name="header_color" class="form-control" value="<?= htmlspecialchars($settings['header_color']) ?>">
+            </div>
+
+            <div class="form-group">
+                <label>Culoare fundal pagină:</label>
+                <input type="color" name="background_color" class="form-control" value="<?= htmlspecialchars($settings['background_color']) ?>">
+            </div>
+
+            <button type="submit" class="btn btn-primary">Salvează modificările</button>
+        </form>
     </div>
 </div>
 </body>
